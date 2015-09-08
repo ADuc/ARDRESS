@@ -1,0 +1,12 @@
+F:\LIVEPASS\ARDRESS\ARDressUnity\Temp\bin\Debug\Assembly-CSharp.dll
+F:\LIVEPASS\ARDRESS\ARDressUnity\Temp\bin\Debug\Assembly-CSharp.pdb
+F:\LIVEPASS\ARDRESS\ARDressUnity\Temp\bin\Debug\UnityEditor.dll
+F:\LIVEPASS\ARDRESS\ARDressUnity\Temp\bin\Debug\UnityEngine.dll
+F:\LIVEPASS\ARDRESS\ARDressUnity\Temp\bin\Debug\UnityEngine.UI.dll
+F:\LIVEPASS\ARDRESS\ARDressUnity\Temp\bin\Debug\Mono.Cecil.dll
+F:\LIVEPASS\ARDRESS\ARDressUnity\Temp\bin\Debug\nunit.framework.dll
+F:\LIVEPASS\ARDRESS\ARDressUnity\Temp\bin\Debug\Unity.DataContract.dll
+F:\LIVEPASS\ARDRESS\ARDressUnity\Temp\bin\Debug\ICSharpCode.NRefactory.dll
+F:\LIVEPASS\ARDRESS\ARDressUnity\obj\Debug\Assembly-CSharp-vs.csprojResolveAssemblyReference.cache
+F:\LIVEPASS\ARDRESS\ARDressUnity\obj\Debug\Assembly-CSharp.dll
+F:\LIVEPASS\ARDRESS\ARDressUnity\obj\Debug\Assembly-CSharp.pdb
