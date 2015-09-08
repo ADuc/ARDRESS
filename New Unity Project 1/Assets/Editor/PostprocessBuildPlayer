@@ -1,0 +1,231 @@
+#!/usr/bin/env python
+
+#######################################################################
+# This file is part of the Structure SDK.
+# Copyright 2015 Occipital, Inc. All rights reserved.
+# http://structure.io
+#######################################################################
+
+import sys
+import os.path
+import os
+import shutil
+import tempfile
+
+project_dir=os.getcwd()
+install_path = sys.argv[1]
+target_platform = sys.argv[2]
+
+#######################################################################
+# Step 1, copy and overwrite the framework
+# instead of duplicating another framework binary
+#######################################################################
+
+UNITY_VERSION = 'UNITY_VERSION_UNKNOWN'
+
+if os.path.exists(install_path +  '/Classes/UnityAppController+Rendering.mm'):
+    UNITY_VERSION = 'UNITY_VERSION_4_5'
+    app_controller_mm = install_path +  '/Classes/UnityAppController+Rendering.mm'
+elif os.path.exists(install_path +  '/Classes/UnityAppController.mm'):
+    UNITY_VERSION = 'UNITY_VERSION_4_3_4'
+    app_controller_mm = install_path + '/Classes/UnityAppController.mm'
+else:
+    sys.stdout.write('Please use Unity version 4.3.4 or newer\n')
+    sys.exit(1)
+
+def copy_and_overwrite(from_path, to_path):
+    if os.path.exists(to_path):
+        shutil.rmtree(to_path)
+    shutil.copytree(from_path, to_path, symlinks=False)
+
+structure_framework_src=os.path.join(project_dir, "Assets/Plugins/iOS/Structure.framework")
+structure_framework_dest=os.path.join(install_path, "Libraries/Structure.framework")
+copy_and_overwrite(structure_framework_src, structure_framework_dest)
+
+#######################################################################
+# Step 2: Modify the UnityAppController.mm rendering loop code,
+# completely turning off CADisplayLink. StructureAR.mm will drive the render loop.
+#######################################################################
+
+def process_app_controller(filename, replacement):
+    old_file = open(filename, 'r')
+    text = old_file.read()
+    old_file.close()
+    new_file = open(filename, 'w')
+    for text_in, text_out in replacement.iteritems():
+        text = text.replace(text_in, text_out)
+    new_file.write(text)
+    new_file.close()
+
+# replacement of the displayLink, here we remove it completely
+app_controller_replacement = {
+	'_displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(repaintDisplayLink)];': '',
+    '[_displayLink setFrameInterval:animationFrameInterval];': '',
+    '[_displayLink addToRunLoop:[NSRunLoop currentRunLoop] forMode:NSRunLoopCommonModes];': ''
+}
+process_app_controller(app_controller_mm, app_controller_replacement)
+
+#######################################################################
+# Step 3: Modify the Xcode project file
+# i.   add framework files
+# ii.  add c++ runtime linker flag
+# iii. add framework search path
+# iv.  change the debug information format into dwarf only (large savings on
+#      build time), or dwarf with dSym
+#######################################################################
+
+def PBXBuildFileString(frameworkFile):
+    return '\t\t' + frameworkFile[0] + ' /* ' + frameworkFile[1] + ' in Frameworks */ = {isa = PBXBuildFile; fileRef = ' + frameworkFile[2] + ' /* '+  frameworkFile[1] + ' */; };\n'
+
+def PBXFileReferenceString(frameworkFile):
+    return '\t\t' + frameworkFile[2] + ' /* ' + frameworkFile[1] + ' */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ' + frameworkFile[1] + '; path = ' + frameworkFile[4] + frameworkFile[1] + '; sourceTree = ' + frameworkFile[3] + '; };\n'
+
+def PBXFrameworksBuildPhaseString(frameworkFile):
+    return '\t\t\t\t' + frameworkFile[0] + ' /* ' + frameworkFile[1] + ' in Frameworks */,\n'
+
+def PBXGroupString(frameworkFile):
+    return '\t\t\t\t' + frameworkFile[2] + ' /* ' + frameworkFile[1] + ' */,\n'
+
+def LinkerFlagString(linkerFlag):
+    return '\t\t\t\t\t' + '"'+ linkerFlag + '",\n'
+
+def process_pbxproj_file(filename, frameworkFiles, linkerFlags, turn_dSym_on):
+
+    old_file = open(filename, 'r')
+    lines = old_file.readlines()
+    old_file.close()
+
+    new_file = open(filename, 'w')
+
+    currentLine = 0
+    endLine = len(lines)
+    while True:
+        if currentLine == endLine:
+            break
+        line = lines[currentLine]
+
+        splits = line.split()
+        new_file.write(line)
+        currentLine = currentLine + 1
+
+	# PBXBuildFile
+        if line ==  '/* Begin PBXBuildFile section */\n':
+            for frameworkFile in frameworkFiles:
+                new_file.write(PBXBuildFileString(frameworkFile))
+
+	# PBXFileReference
+        elif line == '/* Begin PBXFileReference section */\n':
+            for frameworkFile in frameworkFiles:
+                new_file.write(PBXFileReferenceString(frameworkFile))
+
+	# PBXFrameworksBuildPhase
+        elif line == '/* Begin PBXFrameworksBuildPhase section */\n':
+            new_file.write(lines[currentLine])
+            new_file.write(lines[currentLine+1])
+            new_file.write(lines[currentLine+2])
+            new_file.write(lines[currentLine+3])
+            currentLine = currentLine + 4
+            for frameworkFile in frameworkFiles:
+                new_file.write(PBXFrameworksBuildPhaseString(frameworkFile))
+
+	# PBXGroup
+        elif line == '/* Begin PBXGroup section */\n':
+            foundPBXGroup = False
+            while not foundPBXGroup:
+                if lines[currentLine] == '/* End PBXGroup section */\n':
+                    break
+
+                thisLine = lines[currentLine]
+                new_file.write(thisLine)
+                currentLine = currentLine + 1
+                lineSplits = thisLine.split()
+                if len(lineSplits) == 6 and lineSplits[2] == 'Frameworks':
+                    foundPBXGroup = True
+                    new_file.write(lines[currentLine])
+                    new_file.write(lines[currentLine+1])
+                    currentLine = currentLine + 2
+                    for frameworkFile in frameworkFiles:
+                        new_file.write(PBXGroupString(frameworkFile))
+
+	# OTHER_LDFLAGS
+        elif len(splits) >= 3 and splits[0] == 'OTHER_LDFLAGS' and splits[2] == '(':
+            for linkerFlag in linkerFlags:
+                new_file.write(LinkerFlagString(linkerFlag))
+
+	# buildSettings
+        elif len(splits) >= 3 and splits[0] == 'buildSettings' and splits[2] == '{':
+            
+            # debug information format
+            if turn_dSym_on:
+                new_file.write('\t\t\t\tDEBUG_INFORMATION_FORMAT = dwarf-with-dsym;\n')
+            else:
+                new_file.write('\t\t\t\tDEBUG_INFORMATION_FORMAT = dwarf;\n')
+    
+            # frame work search path
+            new_file.write('\t\t\t\tFRAMEWORK_SEARCH_PATHS = (\n')
+            new_file.write('\t\t\t\t\t"$(inherited)",\n')
+            for frameworkFile in frameworkFiles:
+                if not frameworkFile[3] == 'SDKROOT':
+                    new_file.write('\t\t\t\t\t\"\\"$(SRCROOT)/' + frameworkFile[4] + '\\"",\n')
+            new_file.write('\t\t\t\t);\n')
+
+
+    new_file.close()
+
+# Framework files to add to the project file
+frameworkFiles = [['81975D8B1593EC5E00880B44', 'ExternalAccessory.framework', '81975D8A1593EC5D00880B44', 'SDKROOT', 'System/Library/Frameworks/'],
+                    ['2A04BC4C18B436F2005D2D61', 'Accelerate.framework','2A04BC4B18B436F2005D2D61', 'SDKROOT','System/Library/Frameworks/'],
+                    ['2A04BC4E18B436F8005D2D61', 'CoreImage.framework','2A04BC4D18B436F8005D2D61', 'SDKROOT','System/Library/Frameworks/'],
+                    ['2A04BC5018B436FE005D2D61', 'ImageIO.framework','2A04BC4F18B436FE005D2D61', 'SDKROOT','System/Library/Frameworks/'],
+                    ['2ABC3AFA18B57148006915E3', 'GLKit.framework','2ABC3AF918B57148006915E3','SDKROOT','System/Library/Frameworks/'],
+                    ['81975D891593EC4900880B44','Structure.framework','81975D881593EC4900880B44','"<group>"', 'Libraries/']]
+# linker flags to add to the build setting
+linkerFlags = ['-lc++']
+
+pbxproj_filename = install_path +  '/Unity-iPhone.xcodeproj/project.pbxproj'
+
+# with the option to turn on the dSym, which dSym file will be generated or
+# not. Turning it off can save build time
+turn_dSym_on = False
+process_pbxproj_file(pbxproj_filename, frameworkFiles, linkerFlags,
+        turn_dSym_on)
+
+#######################################################################
+# Step 4: Modify the Xcode project's Info.plist file
+# We will add the Structure Sensor external accessory protocol keys
+#######################################################################
+
+def process_plist_file(filename, plistAdditions):
+
+    old_file = open(filename, 'r')
+    lines = old_file.readlines()
+    old_file.close()
+
+    new_file = open(filename, 'w')
+    plistAdd = False
+
+    currentLine = 0
+    endLine = len(lines)
+
+    while True:
+        if currentLine == endLine:
+            break
+        line = lines[currentLine]
+        if line == '\t<key>UIApplicationExitsOnSuspend</key>\n':
+            new_file.write('\t<key>UIApplicationExitsOnSuspend</key>\n\t<true/>\n')
+            currentLine = currentLine + 2
+        else:
+            new_file.write(line)
+            currentLine = currentLine + 1
+            splicts = line.split()
+            if not plistAdd and splicts[0] == '<dict>':
+                plistAdd = True
+                for plist in plistAdditions:
+                    new_file.write('\t<key>'+ plist[0] + '</key>\n')
+                    new_file.write('\t' + plist[1] +'\n')
+    new_file.close()
+
+# List of info.plist additions. Array format is key, xml value string
+plistAdditions = [["UISupportedExternalAccessoryProtocols", "<array><string>io.structure.control</string><string>io.structure.depth</string><string>io.structure.infrared</string></array>"]]
+info_plist_path = os.path.join(install_path, 'Info.plist')
+process_plist_file(info_plist_path, plistAdditions)
