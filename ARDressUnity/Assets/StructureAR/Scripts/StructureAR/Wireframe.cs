@@ -90,6 +90,7 @@ namespace StructureAR
 
             Manager.StructureARGameEvent += HandleStructureARGameEvent;
             PinchToScale.TouchEvent += HandleScaleEvent;
+			GameLog.Log(" ----------------Wireframe----Start------------------------------------ ");
         }
 
         void HandleStructureARGameEvent(object sender, GameEventArgs args)
@@ -127,7 +128,7 @@ namespace StructureAR
             {
                 return;
             }
-
+			GameLog.Log(" ----------------Wireframe----ConstructMesh------------------------------------ ");
             // Generate set of all edges, don't repeat edges
             this.Vertices = filter.mesh.vertices;
             int[] triangles = filter.mesh.triangles;
@@ -233,7 +234,7 @@ namespace StructureAR
             this.HitList.Add(hp);
             
         }
-
+		bool flag = true;
         void OnRenderObject()
         {
             if(!this.isMeshComplete)
@@ -251,7 +252,10 @@ namespace StructureAR
                 return;
             if(HitList.Count <= 0)
                 return;
-
+			if (flag) {
+				GameLog.Log (" ----------------Wireframe----OnRenderObject------------------------------------ ");
+				flag = false;
+			}
             lineMaterial.SetPass(0);
             GL.Color(lineColor);
             GL.Begin(GL.LINES);

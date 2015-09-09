@@ -102,6 +102,7 @@ namespace StructureAR
             Material m = Resources.Load<Material>(path);
             if(m != null)
             {
+				GameLog.Log("AssignMaterial material "+path);
                 return m;
             }
             else

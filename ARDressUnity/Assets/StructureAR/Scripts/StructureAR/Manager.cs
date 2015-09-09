@@ -244,7 +244,6 @@ namespace StructureAR
                     break;
 
                 case SensorState.WaitingForMesh: // WaitingForMesh -> Playing
-					
                     break;
 
                 case SensorState.Playing: // Playing -> DeviceReady
